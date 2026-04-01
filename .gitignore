@@ -1,0 +1,39 @@
+# macOS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+backend/venv/
+
+# Flask / local database
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Node / frontend build artifacts
+node_modules/
+frontend/project1/node_modules/
+dist/
+frontend/project1/dist/
+*.tsbuildinfo
+
+# Environment and local config
+.env
+.env.*
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
