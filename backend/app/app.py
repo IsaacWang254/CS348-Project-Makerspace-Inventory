@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from sqlalchemy.exc import SQLAlchemyError
 # Import the 'db' instance and your classes from your model.py file
 from models import db, Category, Component 
 
@@ -41,10 +42,19 @@ def seed_default_categories():
 
     for name in missing_names:
         db.session.add(Category(name=name))
-    db.session.commit()
+    commit_or_rollback(db.session)
+
+
+def commit_or_rollback(session):
+    try:
+        session.commit()
+    except SQLAlchemyError:
+        session.rollback()
+        raise
 
 
 def ensure_component_price_column():
+    # Fixed schema-maintenance SQL only; user input never reaches db.text().
     table_info = db.session.execute(db.text("PRAGMA table_info(components)")).mappings().all()
     column_names = {column["name"] for column in table_info}
 
@@ -52,22 +62,36 @@ def ensure_component_price_column():
         return
 
     db.session.execute(db.text("ALTER TABLE components ADD COLUMN price FLOAT NOT NULL DEFAULT 0.0"))
-    db.session.commit()
+    commit_or_rollback(db.session)
 
 
 def ensure_component_spec_columns():
+    # Fixed schema-maintenance SQL only; user input never reaches db.text().
     table_info = db.session.execute(db.text("PRAGMA table_info(components)")).mappings().all()
     column_names = {column["name"] for column in table_info}
+    changed = False
 
     if "resistance_ohms" not in column_names:
         db.session.execute(db.text("ALTER TABLE components ADD COLUMN resistance_ohms FLOAT"))
+        changed = True
     if "voltage_volts" not in column_names:
         db.session.execute(db.text("ALTER TABLE components ADD COLUMN voltage_volts FLOAT"))
+        changed = True
     if "capacity_mah" not in column_names:
         db.session.execute(db.text("ALTER TABLE components ADD COLUMN capacity_mah FLOAT"))
+        changed = True
     if "capacitance_farads" not in column_names:
         db.session.execute(db.text("ALTER TABLE components ADD COLUMN capacitance_farads FLOAT"))
-    db.session.commit()
+        changed = True
+
+    if changed:
+        commit_or_rollback(db.session)
+
+
+def ensure_stage3_indexes():
+    for table in (Category.__table__, Component.__table__):
+        for index in table.indexes:
+            index.create(bind=db.engine, checkfirst=True)
 
 
 def parse_optional_float(value):
@@ -92,6 +116,23 @@ def serialize_component(component):
         "capacity_mah": component.capacity_mah,
         "capacitance_farads": component.capacitance_farads,
     }
+
+
+def build_components_report_query(filters):
+    query = Component.query
+
+    if filters["min_qty"] is not None:
+        query = query.filter(Component.quantity_in_stock >= filters["min_qty"])
+    if filters["max_qty"] is not None:
+        query = query.filter(Component.quantity_in_stock <= filters["max_qty"])
+    if filters["min_price"] is not None:
+        query = query.filter(Component.price >= filters["min_price"])
+    if filters["max_price"] is not None:
+        query = query.filter(Component.price <= filters["max_price"])
+    if filters["category_id"] is not None:
+        query = query.filter(Component.category_id == filters["category_id"])
+
+    return query
 
 
 def apply_category_specific_fields(component, category_name, data):
@@ -135,6 +176,7 @@ with app.app_context():
     db.create_all()
     ensure_component_price_column()
     ensure_component_spec_columns()
+    ensure_stage3_indexes()
     seed_default_categories()
 
 # ==========================================
@@ -165,7 +207,10 @@ def add_component():
         return jsonify({"error": validation_error}), 400
 
     db.session.add(new_component)
-    db.session.commit()
+    try:
+        commit_or_rollback(db.session)
+    except SQLAlchemyError:
+        return jsonify({"error": "Could not save component"}), 500
     return jsonify({"message": "Component added successfully"}), 201
 
 # Add your GET, PUT, and DELETE routes for components below...
@@ -178,34 +223,17 @@ def get_components():
 
 @app.route('/api/components/report', methods=['GET'])
 def get_components_report():
-    min_qty = request.args.get('min_qty', type=int)
-    max_qty = request.args.get('max_qty', type=int)
-    min_price = request.args.get('min_price', type=float)
-    max_price = request.args.get('max_price', type=float)
-    category_id = request.args.get('category_id', type=int)
+    filters = {
+        "min_qty": request.args.get('min_qty', type=int),
+        "max_qty": request.args.get('max_qty', type=int),
+        "min_price": request.args.get('min_price', type=float),
+        "max_price": request.args.get('max_price', type=float),
+        "category_id": request.args.get('category_id', type=int),
+    }
 
-    query = Component.query
-
-    if min_qty is not None:
-        query = query.filter(Component.quantity_in_stock >= min_qty)
-    if max_qty is not None:
-        query = query.filter(Component.quantity_in_stock <= max_qty)
-    if min_price is not None:
-        query = query.filter(Component.price >= min_price)
-    if max_price is not None:
-        query = query.filter(Component.price <= max_price)
-    if category_id is not None:
-        query = query.filter(Component.category_id == category_id)
-
-    components = query.all()
+    components = build_components_report_query(filters).all()
     return jsonify({
-        "filters": {
-            "min_qty": min_qty,
-            "max_qty": max_qty,
-            "min_price": min_price,
-            "max_price": max_price,
-            "category_id": category_id,
-        },
+        "filters": filters,
         "report": [
             serialize_component(c)
             for c in components
@@ -226,18 +254,25 @@ def update_component():
     if 'price' in data:
         component.price = data['price']
     if 'category_id' in data:
-      component.category_id = data['category_id']
+        component.category_id = data['category_id']
 
     category = Category.query.get(component.category_id)
     if not category:
+        db.session.rollback()
         return jsonify({"error": "Category not found"}), 404
 
     validation_error = apply_category_specific_fields(component, category.name, data)
     if validation_error:
+        db.session.rollback()
         return jsonify({"error": validation_error}), 400
 
-    db.session.commit()
+    try:
+        commit_or_rollback(db.session)
+    except SQLAlchemyError:
+        return jsonify({"error": "Could not update component"}), 500
     return jsonify({"message": "Component updated successfully"}), 200
+
+
 @app.route('/api/components', methods=['DELETE'])
 def delete_component():
     data = request.json
@@ -245,7 +280,10 @@ def delete_component():
     if not component:
         return jsonify({"error": "Component not found"}), 404
     db.session.delete(component)
-    db.session.commit()
+    try:
+        commit_or_rollback(db.session)
+    except SQLAlchemyError:
+        return jsonify({"error": "Could not delete component"}), 500
     return jsonify({"message": "Component deleted successfully"}), 200
 
 if __name__ == '__main__':

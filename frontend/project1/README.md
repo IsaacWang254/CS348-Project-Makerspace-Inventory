@@ -47,6 +47,25 @@ CREATE TABLE components (
 );
 ```
 
+## Stage 3 Database Concepts
+
+### SQL injection protection
+- The Flask API uses SQLAlchemy ORM queries instead of building SQL strings from user input.
+- Report filter values are parsed with typed request arguments in `get_components_report`, then applied in `build_components_report_query` with SQLAlchemy filter expressions.
+- The only raw SQL statements are fixed startup schema-maintenance statements; no request data is interpolated into `db.text()`.
+
+### Indexes
+- `ix_categories_name` supports loading and displaying category choices from the database.
+- `ix_components_category_id` supports category filtering in the component report.
+- `ix_components_quantity_in_stock` supports quantity range filters in the component report.
+- `ix_components_price` supports price range filters in the component report.
+- `ix_components_report_filters` supports combined report filters on category, quantity, and price.
+
+### Transactions and isolation
+- Each create, update, and delete request is treated as one logical transaction and calls `commit_or_rollback`.
+- If a database commit fails, the session is rolled back so partial changes are not kept in the current transaction.
+- The local development database is SQLite, which serializes writes and provides transaction isolation suitable for this single-user demo. In a multi-user deployment, the same SQLAlchemy transaction boundaries would be used with the database provider's default isolation level unless a stricter level is required.
+
 ## AI Usage
 
 ### AI tools used
