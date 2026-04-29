@@ -5,7 +5,7 @@ Full-stack inventory app with a Flask + SQLAlchemy backend and a React + Vite fr
 ## Repository Structure
 
 - `backend/` - Flask API and data models
-- `frontend/project1/` - React client
+- `frontend/project/` - React client
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ Backend runs at `http://127.0.0.1:5000`.
 ## Frontend Setup
 
 ```bash
-cd frontend/project1
+cd frontend/project
 npm install
 npm run dev
 ```
