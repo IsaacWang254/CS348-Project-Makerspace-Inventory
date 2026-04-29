@@ -1,4 +1,4 @@
-# CS 348 Project 1
+# CS 348 Project
 
 Full-stack inventory app with a Flask + SQLAlchemy backend and a React + Vite frontend.
 
