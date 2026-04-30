@@ -22,9 +22,9 @@ instance/
 
 # Node / frontend build artifacts
 node_modules/
-frontend/project1/node_modules/
+frontend/project/node_modules/
 dist/
-frontend/project1/dist/
+frontend/project/dist/
 *.tsbuildinfo
 
 # Environment and local config

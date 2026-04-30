@@ -5,7 +5,7 @@
 ### Backend (Flask + SQLAlchemy)
 
 ```bash
-cd project1/backend/app
+cd project/backend/app
 ../venv/bin/python app.py
 ```
 
@@ -14,7 +14,7 @@ Backend runs at: `http://127.0.0.1:5000`
 ### Frontend (React + Vite)
 
 ```bash
-cd project1/frontend/project1
+cd project/frontend/project
 npm install
 npm run dev
 ```
